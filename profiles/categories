@@ -6,5 +6,6 @@ cosmic-utils
 dev-build
 dev-lang
 dev-util
+sys-policy
 virtual
 x11-themes
