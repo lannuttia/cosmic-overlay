@@ -18,10 +18,6 @@ LICENSE="GPL-3"
 SLOT="0"
 KEYWORDS=""
 
-PATCHES=(
-	"${FILESDIR}/xdg-desktop-portal-1.0.0_beta3-add-SystemdService-directive.patch"
-)
-
 RDEPEND+="
 	>=media-libs/mesa-24.0.4
 	>=media-video/pipewire-1.0.3
