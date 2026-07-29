@@ -5,7 +5,7 @@
 
 EAPI=8
 
-DESCRIPTION="The reference implementation of Sass, written in Dart."
+DESCRIPTION="The reference implementation of Sass, written in Dart"
 HOMEPAGE="https://sass-lang.com/dart-sass"
 
 SRC_URI="
