@@ -46,7 +46,7 @@ src_install() {
 	doexe "$(cosmic-common_target_dir)/$PN"
 
 	systemd_newuserunit data/org.freedesktop.impl.portal.desktop.cosmic.service.in \
-			xdg-desktop-portal-cosmic.service
+			org.freedesktop.impl.portal.desktop.cosmic.service
 
 	insinto /usr/share/dbus-1/services
 	newins data/dbus-1/org.freedesktop.impl.portal.desktop.cosmic.service.in \
