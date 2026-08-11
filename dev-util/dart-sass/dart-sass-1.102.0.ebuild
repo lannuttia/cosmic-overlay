@@ -38,35 +38,67 @@ BDEPEND="
 	dev-vcs/git
 "
 
+# Keep the packages fetched in src_unpack out of ${HOME}, which portage
+# recreates on every ebuild invocation
+dart_pub_env() {
+	export PUB_CACHE="${WORKDIR}/.pub-cache"
+}
+
 src_unpack() {
 	default
-	cd "${S}"
+	cd "${S}" || die
+	dart_pub_env
 
 	einfo "Fetching Dart dependencies..."
-	dart pub get
+	dart pub get || die "Failed to fetch Dart dependencies"
 
-	einfo "Fetching sass specification for protocol buffers..."
-	git clone --depth 1 https://github.com/sass/sass.git "${WORKDIR}/sass-spec" || \
-		die "Failed to clone sass specification"
+	# tool/grind/utils.dart hardcodes this path (updateLanguageRepo), and
+	# buf.work.yaml expects the protobuf definition in build/language/spec
+	einfo "Fetching the sass language repository..."
+	git clone --depth 1 https://github.com/sass/sass.git "${S}/build/language" || \
+		die "Failed to clone the sass language repository"
 }
 
 src_compile() {
+	dart_pub_env
+
+	# The language repo is already checked out in src_unpack; tell grinder not
+	# to re-clone it on top of ours
+	export UPDATE_SASS_SASS_REPO=false
+
 	einfo "Building protocol buffers..."
-	# Set the sass specification path and use the grinder task
-	# which knows how to handle the protocol buffer generation
-	export SASS_SPEC_PATH="${WORKDIR}/sass-spec"
-	dart run grinder protobuf || die "Failed to build protocol buffers"
+	# Run grind.dart directly rather than via `dart run grinder`: the latter
+	# forwards output through a bootstrap that exit()s without waiting for the
+	# child's stdout/stderr to flush, so build errors can be lost
+	dart run tool/grind.dart protobuf || die "Failed to build protocol buffers"
 
 	einfo "Compiling dart-sass to native executable..."
-	dart compile exe bin/sass.dart -o sass || die "Failed to compile dart-sass"
+	# bin/sass.dart and lib/src/embedded/isolate_dispatcher.dart read these via
+	# String.fromEnvironment; without them `sass --version` and the embedded
+	# protocol handshake are broken, as the fallback path (reading pubspec.yaml
+	# relative to package:sass/) cannot work in an AOT executable
+	local protocol_version
+	protocol_version="$(<build/language/spec/EMBEDDED_PROTOCOL_VERSION)" || die
+	# An empty define still compiles cleanly, so fail loudly instead of
+	# shipping a binary that reports no protocol version
+	[[ -n ${protocol_version} ]] || die "Failed to read EMBEDDED_PROTOCOL_VERSION"
+
+	local -a defines=(
+		-Dversion="${PV}"
+		-Dcompiler-version="${PV}"
+		-Dprotocol-version="${protocol_version}"
+	)
+	dart compile exe bin/sass.dart -o sass "${defines[@]}" || \
+		die "Failed to compile dart-sass"
 }
 
 src_test() {
-	export SASS_SPEC_PATH="${WORKDIR}/sass-spec"
+	dart_pub_env
+	export UPDATE_SASS_SASS_REPO=false
 
 	einfo "Preparing test requirements..."
-	dart run grinder pkg-standalone-dev || die "Failed to prepare pkg-standalone-dev"
-	dart run grinder pkg-npm-dev || die "Failed to prepare pkg-npm-dev"
+	dart run tool/grind.dart pkg-standalone-dev || die "Failed to prepare pkg-standalone-dev"
+	dart run tool/grind.dart pkg-npm-dev || die "Failed to prepare pkg-npm-dev"
 
 	einfo "Running dart-sass tests..."
 	dart run test -x node || die "Tests failed"
