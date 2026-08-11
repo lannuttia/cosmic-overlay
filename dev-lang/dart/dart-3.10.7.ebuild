@@ -134,8 +134,17 @@ src_install() {
 	insinto "${install_dir}"
 	doins -r "${out_dir}"/*
 
-	for onebin in dart dartaotruntime utils/gen_snapshot utils/wasm-opt; do
-		fperms a+x "${install_dir}/bin/$onebin"
+	# doins() drops the executable bit, so restore it for everything the build
+	# marked executable. Do not hardcode a list: the set changes between
+	# releases (3.12 split the JIT VM out into bin/dartvm, and without +x every
+	# `dart run`/`dart <script>` invocation dies silently with exit status 255).
+	local -a exes
+	mapfile -d '' -t exes < <(find "${out_dir}" -type f -executable -print0)
+	[[ ${#exes[@]} -gt 0 ]] || die "Found no executables in ${out_dir}"
+
+	local exe
+	for exe in "${exes[@]}"; do
+		fperms a+x "${install_dir}/${exe#"${out_dir}"/}"
 	done
 
 	dodoc "${out_dir}"/README
