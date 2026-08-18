@@ -22,6 +22,7 @@ RDEPEND+="
 	>=acct-user/cosmic-greeter-0
 	>=dev-libs/libinput-1.26.1
 	>=gui-libs/greetd-0.9.0
+	>=media-libs/dav1d-1.4.2
 	>=sys-libs/pam-1.5.3-r1
 "
 
