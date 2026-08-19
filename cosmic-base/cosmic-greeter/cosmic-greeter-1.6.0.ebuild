@@ -22,13 +22,14 @@ RDEPEND+="
 	>=acct-user/cosmic-greeter-0
 	>=dev-libs/libinput-1.26.1
 	>=gui-libs/greetd-0.9.0
+	>=media-libs/dav1d-1.4.2
 	>=sys-libs/pam-1.5.3-r1
 "
 
 src_configure() {
 	# Required for some crates to build properly due to build.rs scripts
-	export VERGEN_GIT_COMMIT_DATE='Thu Jul 9 17:51:17 2026 -0600'
-	export VERGEN_GIT_SHA=2290aae5e2e078a1d79c6ec1a27cdf3ccc366a45
+	export VERGEN_GIT_COMMIT_DATE='Tue Aug 18 18:58:39 2026 +0200'
+	export VERGEN_GIT_SHA=e9ab9e74a5133f21c76a86985afd6d2909760053
 
 	cosmic-de-r2_src_configure --all
 }
