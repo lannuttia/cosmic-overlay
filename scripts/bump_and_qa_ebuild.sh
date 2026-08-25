@@ -556,7 +556,7 @@ function retry_with_backoff() {
 function check_environment() {
     log_phase "Checking environment..."
 
-    local tools=("git" "git-lfs" "gh" "cargo" "ebuild" "pkgdev" "pkgcheck" "zstd" "b2sum" "sha512sum" "jq")
+    local tools=("git" "git-lfs" "gh" "cargo" "just" "ebuild" "pkgdev" "pkgcheck" "zstd" "b2sum" "sha512sum" "jq")
     for tool in "${tools[@]}"; do
         if ! command -v "$tool" &>/dev/null; then
             errorExit 2 "${tool} not found in PATH - required for this script"
@@ -884,8 +884,25 @@ function phase_source_archive() {
 
     pop_d
 
-    # Now handle Rust vendoring if Cargo.toml exists
+    # If the package has a justfile with an `xdgen` recipe, run it before vendoring.
+    # xdgen generates desktop entries/appstream metadata (via its own cargo crate)
+    # that must exist so its dependencies get picked up by cargo vendor below.
     local pkg_work="${work_dir}/${pkg}-${GENTOO_VERSION}"
+    if [[ -f "${pkg_work}/justfile" ]] && grep -q "^xdgen:" "${pkg_work}/justfile"; then
+        log_info "[${pkg}] Running 'just xdgen'..."
+        push_d "${pkg_work}"
+        if ! just xdgen; then
+            error_with_context \
+                "[${pkg}] just xdgen failed" \
+                "xdgen recipe in justfile did not complete successfully" \
+                "Check: cd ${pkg_work} && just xdgen"
+            pop_d
+            return 1
+        fi
+        pop_d
+    fi
+
+    # Now handle Rust vendoring if Cargo.toml exists
     if [[ -f "${pkg_work}/Cargo.toml" ]]; then
         log_info "[${pkg}] Processing Rust dependencies (cargo vendor --locked)..."
 
