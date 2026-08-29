@@ -3,32 +3,35 @@
 
 EAPI=8
 
-EGIT_LFS=1
 RUST_NEEDS_LLVM=1
 
-inherit cosmic-live pam systemd tmpfiles
+inherit cosmic-de-r2 pam systemd tmpfiles
 
 DESCRIPTION="libcosmic greeter for greetd from COSMIC DE"
 HOMEPAGE="https://github.com/pop-os/cosmic-greeter"
 
-EGIT_REPO_URI="${HOMEPAGE}"
-EGIT_BRANCH=master
+SRC_URI="https://github.com/fsvm88/cosmic-overlay/releases/download/${PV}/${PN}-${PV}.full.tar.zst"
 
 # use cargo-license for a more accurate license picture
 LICENSE="GPL-3"
 SLOT="0"
-KEYWORDS=""
+KEYWORDS="~amd64"
 
 RDEPEND+="
 	~cosmic-base/cosmic-comp-${PV}
 	>=acct-user/cosmic-greeter-0
 	>=dev-libs/libinput-1.26.1
 	>=gui-libs/greetd-0.9.0
+	>=media-libs/dav1d-1.4.2
 	>=sys-libs/pam-1.5.3-r1
 "
 
 src_configure() {
-	cosmic-live_src_configure --all
+	# Required for some crates to build properly due to build.rs scripts
+	export VERGEN_GIT_COMMIT_DATE='Tue Aug 25 02:33:15 2026 +0200'
+	export VERGEN_GIT_SHA=935891e36bf265a3c65906694badc1e66cfc091d
+
+	cosmic-de-r2_src_configure --all
 }
 
 src_install() {
@@ -53,7 +56,7 @@ src_install() {
 		-e '/#\[Install\]/s/^#//' \
 		-e '/#Alias/s/^#//' \
 		debian/cosmic-greeter.service
-	systemd_dounit debian/cosmic-greeter.service
+	systemd_dounit debian/cosmic-greeter.service || die "failed to patch systemd unit via sed"
 
 	newtmpfiles "${FILESDIR}/systemd.tmpfiles" "${PN}.conf"
 }
