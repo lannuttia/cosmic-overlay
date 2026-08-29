@@ -50,3 +50,12 @@ src_install() {
 	newinitd "${FILESDIR}"/${PN}.init ${PN}
 	systemd_dounit "data/${appid}.service"
 }
+
+pkg_postinst() {
+	if [[ ! -d /run/systemd/system ]]; then
+		elog "On OpenRC the power daemon must be enabled manually:"
+		elog "    rc-update add ${PN} default"
+		elog "    rc-service ${PN} start"
+		elog "COSMIC power profile switching requires the running daemon."
+	fi
+}
