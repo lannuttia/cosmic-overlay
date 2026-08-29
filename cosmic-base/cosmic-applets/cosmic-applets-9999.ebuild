@@ -16,8 +16,11 @@ LICENSE="GPL-3"
 SLOT="0"
 KEYWORDS=""
 
+IUSE="+upower"
+
 RDEPEND+="
 ~cosmic-base/cosmic-icons-${PV}
+upower? ( >=sys-power/upower-1.90.0 )
 "
 
 _install_icons() {
