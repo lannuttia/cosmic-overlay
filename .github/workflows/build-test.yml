@@ -1,0 +1,116 @@
+name: Build Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to build (leave empty for all packages)'
+        required: false
+        default: ''
+  
+  pull_request:
+    branches: [main]
+  
+  push:
+    branches: [main]
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.packages.outputs.list }}
+      total: ${{ steps.packages.outputs.total }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Generate package list
+        id: packages
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.package }}" ]; then
+            # Manual trigger with specific package
+            PKGS='["${{ github.event.inputs.package }}"]'
+            TOTAL=1
+          else
+            # Auto-discover all packages in cosmic-base/ (directories only, exclude metadata.xml)
+            PKGS=$(find cosmic-base/ -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | jq -R -s -c 'split("\n")[:-1]')
+            TOTAL=$(find cosmic-base/ -mindepth 1 -maxdepth 1 -type d | wc -l)
+          fi
+          echo "list=$PKGS" >> $GITHUB_OUTPUT
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "Will build $TOTAL packages: $PKGS"
+
+  build-packages:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false  # Continue building other packages even if one fails
+      max-parallel: 20  # GitHub free tier allows 20 concurrent jobs
+      matrix:
+        package: ${{ fromJson(needs.generate-matrix.outputs.packages) }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Build cosmic-base/${{ matrix.package }}
+        run: |
+          echo "::group::Building cosmic-base/${{ matrix.package }}"
+          
+          docker run --rm \
+            -v "$PWD":/var/db/repos/cosmic-overlay \
+            -w /var/db/repos/cosmic-overlay \
+            gentoo/stage3:latest \
+            bash -c '
+              set -euo pipefail
+              
+              # Sync Gentoo portage tree
+              echo "Syncing Gentoo repository..."
+              emerge-webrsync
+              
+              # Configure cosmic-overlay repository
+              echo "Configuring cosmic-overlay..."
+              mkdir -p /etc/portage/repos.conf
+              printf "[cosmic-overlay]\nlocation = /var/db/repos/cosmic-overlay\nmasters = gentoo\nauto-sync = no\n" > /etc/portage/repos.conf/cosmic-overlay.conf
+              
+              # Accept ~amd64 keywords for cosmic packages
+              mkdir -p /etc/portage/package.accept_keywords
+              echo "cosmic-base/* ~amd64" > /etc/portage/package.accept_keywords/cosmic-overlay
+              
+              # Build the package
+              echo "Building cosmic-base/${{ matrix.package }}..."
+              emerge --verbose cosmic-base/${{ matrix.package }}
+            '
+          
+          echo "::endgroup::"
+          echo "✅ cosmic-base/${{ matrix.package }} built successfully"
+      
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.package }}
+          path: /var/tmp/portage/cosmic-base/${{ matrix.package }}/temp/build.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  report:
+    needs: [generate-matrix, build-packages]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate report
+        run: |
+          STATUS="${{ needs.build-packages.result }}"
+          TOTAL="${{ needs.generate-matrix.outputs.total }}"
+          
+          echo "Build Status: $STATUS"
+          echo "Total Packages: $TOTAL"
+          
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ All $TOTAL packages built successfully"
+          else
+            echo "❌ Some packages failed to build"
+            echo "Check individual job logs for details"
+            exit 1
+          fi
