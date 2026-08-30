@@ -71,11 +71,20 @@ jobs:
               # Configure cosmic-overlay repository
               echo "Configuring cosmic-overlay..."
               mkdir -p /etc/portage/repos.conf
-              printf "[cosmic-overlay]\nlocation = /var/db/repos/cosmic-overlay\nmasters = gentoo\nauto-sync = no\n" > /etc/portage/repos.conf/cosmic-overlay.conf
+              cat > /etc/portage/repos.conf/cosmic-overlay.conf <<EOF
+          [cosmic-overlay]
+          location = /var/db/repos/cosmic-overlay
+          masters = gentoo
+          auto-sync = no
+          EOF
               
               # Accept ~amd64 keywords for cosmic packages
               mkdir -p /etc/portage/package.accept_keywords
               echo "cosmic-base/* ~amd64" > /etc/portage/package.accept_keywords/cosmic-overlay
+              
+              # Set required USE flags for cosmic packages
+              mkdir -p /etc/portage/package.use
+              echo "cosmic-base/* systemd" > /etc/portage/package.use/cosmic-overlay
               
               # Build the package
               echo "Building cosmic-base/${{ matrix.package }}..."
