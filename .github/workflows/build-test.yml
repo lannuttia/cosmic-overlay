@@ -68,6 +68,10 @@ jobs:
               echo "Syncing Gentoo repository..."
               emerge-webrsync
               
+              # Switch to desktop/systemd profile for proper USE flags
+              echo "Switching to desktop/systemd profile..."
+              eselect profile set default/linux/amd64/23.0/desktop/systemd
+              
               # Configure cosmic-overlay repository
               echo "Configuring cosmic-overlay..."
               mkdir -p /etc/portage/repos.conf
@@ -84,7 +88,8 @@ jobs:
               
               # Set required USE flags for cosmic packages
               mkdir -p /etc/portage/package.use
-              echo "cosmic-base/* systemd" > /etc/portage/package.use/cosmic-overlay
+              echo "cosmic-base/* systemd" | tee /etc/portage/package.use/cosmic-overlay
+              echo "media-libs/freetype harfbuzz" | tee -a /etc/portage/package.use/cosmic-overlay
               
               # Build the package
               echo "Building cosmic-base/${{ matrix.package }}..."
