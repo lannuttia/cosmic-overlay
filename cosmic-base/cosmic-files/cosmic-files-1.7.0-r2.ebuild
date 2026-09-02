@@ -868,13 +868,17 @@ DESCRIPTION="cosmic-files"
 # Double check the homepage as the cargo_metadata crate
 # does not provide this value so instead repository is used
 HOMEPAGE="homepage field in Cargo.toml inaccessible to cargo metadata"
-SRC_URI="$(cargo_crate_uris)"
+SRC_URI="
+https://github.com/pop-os/cosmic-files/archive/refs/tags/epoch-${PV}.tar.gz
+$(cargo_crate_uris)
+"
 
 # License set may be more restrictive as OR is not respected
 # use cargo-license for a more accurate license picture
 LICENSE="0BSD Apache-2.0 Apache-2.0-with-LLVM-exceptions BSD BSD-2 BZIP2 Boost-1.0 CC0-1.0 GPL-2 GPL-3 ISC LGPL-2.1+ LGPL-3+ MIT MIT-0 MPL-2.0 NCSA Unicode-3.0 Unlicense ZLIB"
 SLOT="0"
 KEYWORDS="~amd64"
+S="${WORKDIR}/${PN}-epoch-${PV}"
 
 IUSE+=" afp http mtp nfs samba"
 

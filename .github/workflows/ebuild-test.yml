@@ -164,33 +164,17 @@ jobs:
           echo "Generating metadata cache..."
           egencache --update --repo=cosmic-overlay --jobs=$(nproc)
 
+          # Get binary versions of dependencies if available
+          emerge --getbinpkg --onlydeps "$EBUILD"
+
           # Run pkgdev tatt and execute generated script
           echo "Testing: $EBUILD"
           pkgdev tatt --use-default --use-combos 3 --extra-env-file test.conf -t -p "$EBUILD" -j tatt-test
+          chmod +x tatt-test.sh
+          ./tatt-test.sh
+          exit $?
+          '
           
-          # Run the test script and capture exit code
-          set +e
-          bash ./tatt-test.sh
-          TEST_EXIT_CODE=$?
-          set -e
-          
-          # Show the report
-          echo ""
-          echo "=== Test Report ==="
-          cat ./tatt-test.report || echo "No report generated"
-          echo ""
-          
-          # Exit with the test script exit code
-          exit $TEST_EXIT_CODE
-          ' 2>&1 | tee test-results.log
-          
-          DOCKER_EXIT_CODE=${PIPESTATUS[0]}
-          set -e
-
-          mkdir -p test-results
-          mv test-results.log test-results/
-          
-          # Fail the step if tests failed
           exit $DOCKER_EXIT_CODE
 
       - name: Upload test results

@@ -9,7 +9,14 @@
 
 {% block inherit -%}cargo desktop xdg{%- endblock %}
 
+{%- block src_uri -%}{% raw -%}"
+https://github.com/pop-os/cosmic-files/archive/refs/tags/epoch-${PV}.tar.gz $(cargo_crate_uris)
+$(cargo_crate_uris)
+"{%- endraw %}{%- endblock %}
+
 {% block variables %}
+S="${WORKDIR}/${PN}-epoch-${PV}"
+
 IUSE+=" afp http mtp nfs samba"
 
 DEPEND="
