@@ -113,8 +113,12 @@ jobs:
           path: gentoo-repo
 
       - name: Test ebuild with pkgdev tatt
+        id: test
         run: |
           EBUILD="${{ matrix.ebuild }}"
+          # Sanitize ebuild name for artifact (replace invalid chars with -)
+          SAFE_NAME=$(echo "$EBUILD" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          echo "safe-name=$SAFE_NAME" >> $GITHUB_OUTPUT
 
           docker run --rm \
             -v "$PWD/gentoo-repo":/var/db/repos/gentoo:ro \
@@ -159,6 +163,6 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-${{ matrix.ebuild }}
+          name: test-${{ steps.test.outputs.safe-name }}
           path: test-results/
           retention-days: 30
