@@ -133,15 +133,18 @@ jobs:
 
           [cosmic-overlay]
           location = /var/db/repos/cosmic-overlay
-          sync-type = git
           masters = gentoo
           auto-sync = no
           REPOCONF
-          
+
           cat > /etc/portage/env/test.conf << "TESTCONF"
           FEATURES="test usersandbox userpriv sandbox"
           PORTAGE_ELOG_CLASSES="log warn error qa"
           TESTCONF
+          
+          # Accept all licenses for testing
+          mkdir -p /etc/portage/package.license
+          echo "*/*::cosmic-overlay *" > /etc/portage/package.license/cosmic-overlay
           
           # Generate metadata cache for the overlay
           echo "Generating metadata cache..."
@@ -150,8 +153,21 @@ jobs:
           # Run pkgdev tatt and execute generated script
           echo "Testing: $EBUILD"
           pkgdev tatt --use-default --use-combos 3 --extra-env-file test.conf -t -p "$EBUILD" -j tatt-test
+          
+          # Run the test script and capture exit code
+          set +e
           bash ./tatt-test.sh
-          cat ./tatt-test.report || true
+          TEST_EXIT_CODE=$?
+          set -e
+          
+          # Show the report
+          echo ""
+          echo "=== Test Report ==="
+          cat ./tatt-test.report || echo "No report generated"
+          echo ""
+          
+          # Exit with the test script exit code
+          exit $TEST_EXIT_CODE
           ' 2>&1 | tee test-results.log
 
           mkdir -p test-results
