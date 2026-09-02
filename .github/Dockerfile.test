@@ -1,11 +1,11 @@
 FROM gentoo/stage3:latest
 
-# Sync repositories and install testing tools
+# Sync repo and install testing tools
+# Keep the gentoo repo in the image so we don't need to download/mount it separately
 RUN emerge-webrsync && \
     emerge -v --oneshot portage && \
     emerge -v dev-util/pkgdev dev-util/pkgcheck && \
-    mkdir -p /etc/portage/env /etc/portage/repos.conf && \
-    rm -rf /var/db/repos/gentoo
+    mkdir -p /etc/portage/env /etc/portage/repos.conf
 
 # Set working directory
 WORKDIR /var/db/repos/cosmic-overlay

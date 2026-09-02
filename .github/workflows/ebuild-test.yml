@@ -58,39 +58,14 @@ jobs:
           # Create JSON array
           echo "ebuilds=[$(IFS=,; echo "${EBUILDS[*]}")]" >> $GITHUB_OUTPUT
 
-  setup-repos:
+  setup-image:
     runs-on: ubuntu-latest
     outputs:
-      cache-key: ${{ steps.cache-repos.outputs.cache-primary-key }}
       image-tag: ${{ steps.date.outputs.date }}
     steps:
       - name: Get current date
         id: date
         run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-
-      - name: Cache Gentoo repository
-        id: cache-repos
-        uses: actions/cache@v4
-        with:
-          path: gentoo-repo
-          key: gentoo-repo-${{ steps.date.outputs.date }}
-          restore-keys: |
-            gentoo-repo-
-
-      - name: Checkout Gentoo repository
-        if: steps.cache-repos.outputs.cache-hit != 'true'
-        uses: actions/checkout@v4
-        with:
-          repository: gentoo-mirror/gentoo
-          path: gentoo-repo
-          depth: 1
-
-      - name: Upload Gentoo repository
-        uses: actions/upload-artifact@v4
-        with:
-          name: gentoo-repo
-          path: gentoo-repo/
-          retention-days: 1
 
       - name: Checkout overlay (for Dockerfile)
         uses: actions/checkout@v4
@@ -109,27 +84,16 @@ jobs:
           cache-to: type=gha,mode=max,scope=cosmic-test
 
   test-ebuilds:
-    needs: [detect-changed-ebuilds, setup-repos]
+    needs: [detect-changed-ebuilds, setup-image]
     if: needs.detect-changed-ebuilds.outputs.ebuilds != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         ebuild: ${{ fromJson(needs.detect-changed-ebuilds.outputs.ebuilds) }}
-
+    
     steps:
       - name: Checkout overlay
-        uses: actions/checkout@v4
-        with:
-          path: cosmic-overlay
-
-      - name: Download Gentoo repository
-        uses: actions/download-artifact@v4
-        with:
-          name: gentoo-repo
-          path: gentoo-repo
-
-      - name: Checkout overlay (for Dockerfile)
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
@@ -141,7 +105,7 @@ jobs:
           context: .
           file: .github/Dockerfile.test
           load: true
-          tags: cosmic-test:${{ needs.setup-repos.outputs.image-tag }}
+          tags: cosmic-test:${{ needs.setup-image.outputs.image-tag }}
           cache-from: type=gha,scope=cosmic-test
 
       - name: Test ebuild with pkgdev tatt
@@ -153,11 +117,10 @@ jobs:
           echo "safe-name=$SAFE_NAME" >> $GITHUB_OUTPUT
 
           docker run --rm \
-            -v "$PWD/gentoo-repo":/var/db/repos/gentoo:ro \
-            -v "$PWD/cosmic-overlay":/var/db/repos/cosmic-overlay \
+            -v "$PWD":/var/db/repos/cosmic-overlay \
             -w /var/db/repos/cosmic-overlay \
             -e "EBUILD=$EBUILD" \
-            cosmic-test:${{ needs.setup-repos.outputs.image-tag }} bash -c '
+            cosmic-test:${{ needs.setup-image.outputs.image-tag }} bash -c '
           set -x
           
           # Setup environment (directories already exist in cached image)
