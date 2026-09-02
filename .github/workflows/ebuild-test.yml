@@ -111,11 +111,13 @@ jobs:
       - name: Test ebuild with pkgdev tatt
         id: test
         run: |
+          set -e
           EBUILD="${{ matrix.ebuild }}"
           # Sanitize ebuild name for artifact (replace invalid chars with -)
           SAFE_NAME=$(echo "$EBUILD" | sed 's/[^a-zA-Z0-9._-]/-/g')
           echo "safe-name=$SAFE_NAME" >> $GITHUB_OUTPUT
 
+          set +e
           docker run --rm \
             -v "$PWD":/var/db/repos/cosmic-overlay \
             -w /var/db/repos/cosmic-overlay \
@@ -173,9 +175,15 @@ jobs:
           # Exit with the test script exit code
           exit $TEST_EXIT_CODE
           ' 2>&1 | tee test-results.log
+          
+          DOCKER_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
 
           mkdir -p test-results
           mv test-results.log test-results/
+          
+          # Fail the step if tests failed
+          exit $DOCKER_EXIT_CODE
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
