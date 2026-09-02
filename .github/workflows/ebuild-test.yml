@@ -1,0 +1,186 @@
+name: Ebuild Testing
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.ebuild'
+      - '**/metadata.xml'
+      - 'eclass/**'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Specific package to test (e.g., cosmic-base/cosmic-edit-1.7.0)'
+        required: false
+        type: string
+
+jobs:
+  detect-changed-ebuilds:
+    runs-on: ubuntu-latest
+    outputs:
+      ebuilds: ${{ steps.find-ebuilds.outputs.ebuilds }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed ebuilds
+        id: find-ebuilds
+        run: |
+          # Manual dispatch with specific package
+          if [[ -n "${{ inputs.package }}" ]]; then
+            echo "ebuilds=[\"${{ inputs.package }}\"]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Find changed .ebuild files in PR
+          MODIFIED_EBUILDS=$(git diff --name-only --diff-filter=AM ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} -- '*.ebuild')
+
+          if [[ -z "$MODIFIED_EBUILDS" ]]; then
+            echo "ebuilds=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Convert file paths to package atoms
+          EBUILDS=()
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+
+            # cosmic-base/cosmic-edit/cosmic-edit-1.7.0.ebuild -> =cosmic-base/cosmic-edit-1.7.0
+            CATEGORY=$(echo "$file" | cut -d'/' -f1)
+            EBUILD_NAME=$(basename "$file" .ebuild)
+            ATOM="=${CATEGORY}/${EBUILD_NAME}"
+            EBUILDS+=("\"$ATOM\"")
+            echo "  Found: $ATOM"
+          done <<< "$MODIFIED_EBUILDS"
+          
+          # Create JSON array
+          echo "ebuilds=[$(IFS=,; echo "${EBUILDS[*]}")]" >> $GITHUB_OUTPUT
+
+  setup-image:
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.date.outputs.date }}
+    steps:
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Checkout overlay (for Dockerfile)
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and cache test image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .github/Dockerfile.test
+          push: false
+          tags: cosmic-test:${{ steps.date.outputs.date }}
+          cache-from: type=gha,scope=cosmic-test
+          cache-to: type=gha,mode=max,scope=cosmic-test
+
+  test-ebuilds:
+    needs: [detect-changed-ebuilds, setup-image]
+    if: needs.detect-changed-ebuilds.outputs.ebuilds != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ebuild: ${{ fromJson(needs.detect-changed-ebuilds.outputs.ebuilds) }}
+    
+    steps:
+      - name: Checkout overlay
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test image from cache
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .github/Dockerfile.test
+          load: true
+          tags: cosmic-test:${{ needs.setup-image.outputs.image-tag }}
+          cache-from: type=gha,scope=cosmic-test
+
+      - name: Test ebuild with pkgdev tatt
+        id: test
+        run: |
+          set -e
+          EBUILD="${{ matrix.ebuild }}"
+          # Sanitize ebuild name for artifact (replace invalid chars with -)
+          SAFE_NAME=$(echo "$EBUILD" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          echo "safe-name=$SAFE_NAME" >> $GITHUB_OUTPUT
+
+          set +e
+          docker run --rm \
+            -v "$PWD":/var/db/repos/cosmic-overlay \
+            -w /var/db/repos/cosmic-overlay \
+            -e "EBUILD=$EBUILD" \
+            cosmic-test:${{ needs.setup-image.outputs.image-tag }} bash -c '
+          set -x
+          
+          # Setup environment (directories already exist in cached image)
+          cat > /etc/portage/repos.conf/repos.conf << "REPOCONF"
+          [DEFAULT]
+          main-repo = gentoo
+
+          [gentoo]
+          location = /var/db/repos/gentoo
+
+          [cosmic-overlay]
+          location = /var/db/repos/cosmic-overlay
+          masters = gentoo
+          auto-sync = no
+          REPOCONF
+
+          cat > /etc/portage/env/test.conf << "TESTCONF"
+          FEATURES="test usersandbox userpriv sandbox"
+          PORTAGE_ELOG_CLASSES="log warn error qa"
+          TESTCONF
+          
+          # Accept all licenses for testing
+          mkdir -p /etc/portage/package.license
+          echo "*/*::cosmic-overlay *" > /etc/portage/package.license/cosmic-overlay
+          
+          # Accept all keywords for cosmic-overlay packages (auto-unmask dependencies)
+          mkdir -p /etc/portage/package.accept_keywords
+          echo "*/*::cosmic-overlay **" > /etc/portage/package.accept_keywords/cosmic-overlay
+          
+          # Enable autounmask to handle USE flag dependencies
+          mkdir -p /etc/portage
+          cat >> /etc/portage/make.conf << "MAKECONF"
+          
+          # Allow autounmask to adjust USE flags and keywords
+          EMERGE_DEFAULT_OPTS="--autounmask=y --autounmask-write --autounmask-continue"
+          MAKECONF
+          
+          # Generate metadata cache for the overlay
+          echo "Generating metadata cache..."
+          egencache --update --repo=cosmic-overlay --jobs=$(nproc)
+
+          # Get binary versions of dependencies if available
+          emerge --getbinpkg --onlydeps "$EBUILD"
+
+          # Run pkgdev tatt and execute generated script
+          echo "Testing: $EBUILD"
+          pkgdev tatt --use-default --use-combos 3 --extra-env-file test.conf -t -p "$EBUILD" -j tatt-test
+          chmod +x tatt-test.sh
+          ./tatt-test.sh
+          exit $?
+          '
+          
+          exit $DOCKER_EXIT_CODE
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-${{ steps.test.outputs.safe-name }}
+          path: test-results/
+          retention-days: 30
