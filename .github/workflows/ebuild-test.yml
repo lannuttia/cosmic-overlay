@@ -152,6 +152,14 @@ jobs:
           mkdir -p /etc/portage/package.accept_keywords
           echo "*/*::cosmic-overlay **" > /etc/portage/package.accept_keywords/cosmic-overlay
           
+          # Enable autounmask to handle USE flag dependencies
+          mkdir -p /etc/portage
+          cat >> /etc/portage/make.conf << "MAKECONF"
+          
+          # Allow autounmask to adjust USE flags and keywords
+          EMERGE_DEFAULT_OPTS="--autounmask=y --autounmask-write --autounmask-continue"
+          MAKECONF
+          
           # Generate metadata cache for the overlay
           echo "Generating metadata cache..."
           egencache --update --repo=cosmic-overlay --jobs=$(nproc)
