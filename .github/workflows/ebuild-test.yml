@@ -1,0 +1,164 @@
+name: Ebuild Testing
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.ebuild'
+      - '**/metadata.xml'
+      - 'eclass/**'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Specific package to test (e.g., cosmic-base/cosmic-edit-1.7.0)'
+        required: false
+        type: string
+
+jobs:
+  detect-changed-ebuilds:
+    runs-on: ubuntu-latest
+    outputs:
+      ebuilds: ${{ steps.find-ebuilds.outputs.ebuilds }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed ebuilds
+        id: find-ebuilds
+        run: |
+          # Manual dispatch with specific package
+          if [[ -n "${{ inputs.package }}" ]]; then
+            echo "ebuilds=[\"${{ inputs.package }}\"]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Find changed .ebuild files in PR
+          MODIFIED_EBUILDS=$(git diff --name-only --diff-filter=AM ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} -- '*.ebuild')
+
+          if [[ -z "$MODIFIED_EBUILDS" ]]; then
+            echo "ebuilds=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Convert file paths to package atoms
+          EBUILDS=()
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+
+            # cosmic-base/cosmic-edit/cosmic-edit-1.7.0.ebuild -> =cosmic-base/cosmic-edit-1.7.0
+            CATEGORY=$(echo "$file" | cut -d'/' -f1)
+            EBUILD_NAME=$(basename "$file" .ebuild)
+            ATOM="=${CATEGORY}/${EBUILD_NAME}"
+            EBUILDS+=("\"$ATOM\"")
+            echo "  Found: $ATOM"
+          done <<< "$MODIFIED_EBUILDS"
+          
+          # Create JSON array
+          echo "ebuilds=[$(IFS=,; echo "${EBUILDS[*]}")]" >> $GITHUB_OUTPUT
+
+  setup-repos:
+    runs-on: ubuntu-latest
+    outputs:
+      cache-key: ${{ steps.cache-repos.outputs.cache-primary-key }}
+    steps:
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Cache Gentoo repository
+        id: cache-repos
+        uses: actions/cache@v4
+        with:
+          path: gentoo-repo
+          key: gentoo-repo-${{ steps.date.outputs.date }}
+          restore-keys: |
+            gentoo-repo-
+
+      - name: Checkout Gentoo repository
+        if: steps.cache-repos.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: gentoo-mirror/gentoo
+          path: gentoo-repo
+          depth: 1
+
+      - name: Upload Gentoo repository
+        uses: actions/upload-artifact@v4
+        with:
+          name: gentoo-repo
+          path: gentoo-repo/
+          retention-days: 1
+
+  test-ebuilds:
+    needs: [detect-changed-ebuilds, setup-repos]
+    if: needs.detect-changed-ebuilds.outputs.ebuilds != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ebuild: ${{ fromJson(needs.detect-changed-ebuilds.outputs.ebuilds) }}
+
+    steps:
+      - name: Checkout overlay
+        uses: actions/checkout@v4
+        with:
+          path: cosmic-overlay
+
+      - name: Download Gentoo repository
+        uses: actions/download-artifact@v4
+        with:
+          name: gentoo-repo
+          path: gentoo-repo
+
+      - name: Test ebuild with pkgdev tatt
+        run: |
+          EBUILD="${{ matrix.ebuild }}"
+
+          docker run --rm \
+            -v "$PWD/gentoo-repo":/var/db/repos/gentoo:ro \
+            -v "$PWD/cosmic-overlay":/var/db/repos/cosmic-overlay \
+            -w /var/db/repos/cosmic-overlay \
+            gentoo/stage3:latest bash << 'EOF' | tee test-results.log
+
+          # Setup environment
+          emerge -v --oneshot portage
+          emerge -v dev-util/pkgdev dev-util/pkgcheck
+
+          mkdir -p /etc/portage/env
+          cat > /etc/portage/env/test.conf << 'TESTCONF'
+          FEATURES="test usersandbox userpriv sandbox"
+          PORTAGE_ELOG_CLASSES="log warn error qa"
+          TESTCONF
+
+          cat > /etc/portage/repos.conf/repos.conf << 'REPOCONF'
+          [DEFAULT]
+          main-repo = gentoo
+
+          [gentoo]
+          location = /var/db/repos/gentoo
+
+          [cosmic-overlay]
+          location = /var/db/repos/cosmic-overlay
+          sync-type = git
+          masters = gentoo
+          auto-sync = no
+          REPOCONF
+
+          # Run pkgdev tatt and execute generated script
+          pkgdev tatt --use-default --use-combos 3 --extra-env-file test.conf -t -p '$EBUILD' -j tatt-test
+          bash ./tatt-test.sh
+          cat ./tatt-test.report || true
+          EOF
+
+          mkdir -p test-results
+          mv test-results.log test-results/
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-${{ matrix.ebuild }}
+          path: test-results/
+          retention-days: 30
