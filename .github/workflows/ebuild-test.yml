@@ -129,15 +129,8 @@ jobs:
           set -x
           
           # Setup environment
-          emerge -v --oneshot portage
-          emerge -v dev-util/pkgdev dev-util/pkgcheck
-
-          mkdir -p /etc/portage/env
-          cat > /etc/portage/env/test.conf << "TESTCONF"
-          FEATURES="test usersandbox userpriv sandbox"
-          PORTAGE_ELOG_CLASSES="log warn error qa"
-          TESTCONF
-
+          mkdir -p /etc/portage/env /etc/portage/repos.conf
+          
           cat > /etc/portage/repos.conf/repos.conf << "REPOCONF"
           [DEFAULT]
           main-repo = gentoo
@@ -151,6 +144,14 @@ jobs:
           masters = gentoo
           auto-sync = no
           REPOCONF
+          
+          cat > /etc/portage/env/test.conf << "TESTCONF"
+          FEATURES="test usersandbox userpriv sandbox"
+          PORTAGE_ELOG_CLASSES="log warn error qa"
+          TESTCONF
+          
+          emerge -v --oneshot portage
+          emerge -v dev-util/pkgdev dev-util/pkgcheck
 
           # Run pkgdev tatt and execute generated script
           echo "Testing: $EBUILD"
