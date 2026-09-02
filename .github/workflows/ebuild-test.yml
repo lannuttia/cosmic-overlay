@@ -146,6 +146,10 @@ jobs:
           mkdir -p /etc/portage/package.license
           echo "*/*::cosmic-overlay *" > /etc/portage/package.license/cosmic-overlay
           
+          # Accept all keywords for cosmic-overlay packages (auto-unmask dependencies)
+          mkdir -p /etc/portage/package.accept_keywords
+          echo "*/*::cosmic-overlay **" > /etc/portage/package.accept_keywords/cosmic-overlay
+          
           # Generate metadata cache for the overlay
           echo "Generating metadata cache..."
           egencache --update --repo=cosmic-overlay --jobs=$(nproc)
