@@ -1,0 +1,9 @@
+FROM gentoo/stage3:latest
+
+# Install testing tools
+RUN emerge -v --oneshot portage && \
+    emerge -v dev-util/pkgdev dev-util/pkgcheck && \
+    mkdir -p /etc/portage/env /etc/portage/repos.conf
+
+# Set working directory
+WORKDIR /var/db/repos/cosmic-overlay

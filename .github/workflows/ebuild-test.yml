@@ -62,6 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       cache-key: ${{ steps.cache-repos.outputs.cache-primary-key }}
+      image-tag: ${{ steps.date.outputs.date }}
     steps:
       - name: Get current date
         id: date
@@ -91,6 +92,22 @@ jobs:
           path: gentoo-repo/
           retention-days: 1
 
+      - name: Checkout overlay (for Dockerfile)
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and cache test image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .github/Dockerfile.test
+          push: false
+          tags: cosmic-test:${{ steps.date.outputs.date }}
+          cache-from: type=gha,scope=cosmic-test
+          cache-to: type=gha,mode=max,scope=cosmic-test
+
   test-ebuilds:
     needs: [detect-changed-ebuilds, setup-repos]
     if: needs.detect-changed-ebuilds.outputs.ebuilds != '[]'
@@ -112,6 +129,21 @@ jobs:
           name: gentoo-repo
           path: gentoo-repo
 
+      - name: Checkout overlay (for Dockerfile)
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test image from cache
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .github/Dockerfile.test
+          load: true
+          tags: cosmic-test:${{ needs.setup-repos.outputs.image-tag }}
+          cache-from: type=gha,scope=cosmic-test
+
       - name: Test ebuild with pkgdev tatt
         id: test
         run: |
@@ -125,12 +157,10 @@ jobs:
             -v "$PWD/cosmic-overlay":/var/db/repos/cosmic-overlay \
             -w /var/db/repos/cosmic-overlay \
             -e "EBUILD=$EBUILD" \
-            gentoo/stage3:latest bash -c '
+            cosmic-test:${{ needs.setup-repos.outputs.image-tag }} bash -c '
           set -x
           
-          # Setup environment
-          mkdir -p /etc/portage/env /etc/portage/repos.conf
-          
+          # Setup environment (directories already exist in cached image)
           cat > /etc/portage/repos.conf/repos.conf << "REPOCONF"
           [DEFAULT]
           main-repo = gentoo
@@ -149,9 +179,6 @@ jobs:
           FEATURES="test usersandbox userpriv sandbox"
           PORTAGE_ELOG_CLASSES="log warn error qa"
           TESTCONF
-          
-          emerge -v --oneshot portage
-          emerge -v dev-util/pkgdev dev-util/pkgcheck
           
           # Generate metadata cache for the overlay
           echo "Generating metadata cache..."
