@@ -152,6 +152,10 @@ jobs:
           
           emerge -v --oneshot portage
           emerge -v dev-util/pkgdev dev-util/pkgcheck
+          
+          # Generate metadata cache for the overlay
+          echo "Generating metadata cache..."
+          egencache --update --repo=cosmic-overlay --jobs=$(nproc)
 
           # Run pkgdev tatt and execute generated script
           echo "Testing: $EBUILD"
