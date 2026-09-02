@@ -124,19 +124,21 @@ jobs:
             -v "$PWD/gentoo-repo":/var/db/repos/gentoo:ro \
             -v "$PWD/cosmic-overlay":/var/db/repos/cosmic-overlay \
             -w /var/db/repos/cosmic-overlay \
-            gentoo/stage3:latest bash << 'EOF' | tee test-results.log
-
+            -e "EBUILD=$EBUILD" \
+            gentoo/stage3:latest bash -c '
+          set -x
+          
           # Setup environment
           emerge -v --oneshot portage
           emerge -v dev-util/pkgdev dev-util/pkgcheck
 
           mkdir -p /etc/portage/env
-          cat > /etc/portage/env/test.conf << 'TESTCONF'
+          cat > /etc/portage/env/test.conf << "TESTCONF"
           FEATURES="test usersandbox userpriv sandbox"
           PORTAGE_ELOG_CLASSES="log warn error qa"
           TESTCONF
 
-          cat > /etc/portage/repos.conf/repos.conf << 'REPOCONF'
+          cat > /etc/portage/repos.conf/repos.conf << "REPOCONF"
           [DEFAULT]
           main-repo = gentoo
 
@@ -151,10 +153,11 @@ jobs:
           REPOCONF
 
           # Run pkgdev tatt and execute generated script
-          pkgdev tatt --use-default --use-combos 3 --extra-env-file test.conf -t -p '$EBUILD' -j tatt-test
+          echo "Testing: $EBUILD"
+          pkgdev tatt --use-default --use-combos 3 --extra-env-file test.conf -t -p "$EBUILD" -j tatt-test
           bash ./tatt-test.sh
           cat ./tatt-test.report || true
-          EOF
+          ' 2>&1 | tee test-results.log
 
           mkdir -p test-results
           mv test-results.log test-results/
