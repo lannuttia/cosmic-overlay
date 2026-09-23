@@ -1,0 +1,12 @@
+FROM docker.io/gentoo/stage3:latest
+
+# Sync repo and install testing tools
+# Keep the gentoo repo in the image so we don't need to download/mount it separately
+RUN emerge-webrsync && \
+    eselect profile set default/linux/amd64/23.0/desktop && \
+    emerge --getbinpkg -v --oneshot portage && \
+    emerge --getbinpkg -v dev-util/pkgdev dev-util/pkgcheck && \
+    mkdir -p /etc/portage/env /etc/portage/repos.conf
+
+# Set working directory
+WORKDIR /var/db/repos/cosmic-overlay
